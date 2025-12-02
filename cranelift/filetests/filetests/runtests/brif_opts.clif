@@ -1,0 +1,38 @@
+test interpret
+test run
+
+set opt_level=none
+target aarch64
+target x86_64
+
+set opt_level=speed
+target aarch64
+target x86_64
+
+function %a(i64) -> i64 {
+block0(v2: i64):
+    v3 = band_imm v2, -562949953421310
+    v4 = icmp_imm eq v3, 0
+    v5 = iconst.i64 6
+    v6 = iconst.i64 7
+    v7 = select v4, v6, v5  ; v6 = 7, v5 = 6
+    v8 = icmp_imm eq v7, 6
+    brif v8, block2, block1
+
+block1:
+    v9 = iconst.i64 100
+    jump block3(v9)
+
+block2:
+    v10 = iconst.i64 101
+    jump block3(v10)
+
+block3(v11: i64):
+    return v11
+}
+
+; run: %a(-67) == 101
+; run: %a(0) == 100
+; run: %a(1) == 100
+; run: %a(2) == 101
+; run: %a(100) == 100
