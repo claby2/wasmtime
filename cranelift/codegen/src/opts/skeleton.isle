@@ -44,3 +44,55 @@
                          (iconst ty (imm64_power_of_two n))
                          (iconst ty (imm64_power_of_two m)))))
   (ushr ty y (select ty x (iconst ty (imm64 n)) (iconst ty (imm64 m)))))
+
+;; DEBUG: Test if brif is being matched at all
+;; This rule should never actually fire in practice (matching condition with itself)
+;; but if it compiles and runs, we know brif instructions are being processed
+;; (rule (simplify_skeleton (brif cond then_block else_block))
+;;   (brif cond then_block else_block))
+
+;; Optimize brif on icmp-of-select with constant inputs.
+;; When we have: brif (icmp_eq (select cond, k1_val, k2_val), k2_val), then_block, else_block
+;; where k1_val and k2_val are constants with different values,
+;; we can simplify to: brif cond, else_block, then_block
+;; Logic: if cond is true, select returns k1_val, icmp returns false (k1 != k2), so take else_block
+;;        if cond is false, select returns k2_val, icmp returns true (k2 == k2), so take then_block
+;; Therefore: brif condition is equivalent to !cond, which means swapped blocks with cond
+(rule (simplify_skeleton (brif (icmp _ (IntCC.Equal)
+                                      (select ty cond k1_val @ (iconst_u _ k1) k2_val @ (iconst_u _ k2))
+                                      k2_val)
+                               then_block
+                               else_block))
+  (if-let false (u64_eq k1 k2))
+  (brif cond else_block then_block))
+
+;; Same optimization but with comparison operands swapped
+(rule (simplify_skeleton (brif (icmp _ (IntCC.Equal)
+                                      k2_val @ (iconst_u _ k2)
+                                      (select ty cond k1_val @ (iconst_u _ k1) k2_val))
+                               then_block
+                               else_block))
+  (if-let false (u64_eq k1 k2))
+  (brif cond else_block then_block))
+
+;; When comparing against k1 instead of k2, the logic is reversed
+;; brif (icmp_eq (select cond, k1_val, k2_val), k1_val), then_block, else_block
+;; if cond is true, select returns k1_val, icmp returns true, so take then_block
+;; if cond is false, select returns k2_val, icmp returns false, so take else_block
+;; Therefore: brif condition is equivalent to cond, no block swapping needed
+(rule (simplify_skeleton (brif (icmp _ (IntCC.Equal)
+                                      (select ty cond k1_val @ (iconst_u _ k1) k2_val @ (iconst_u _ k2))
+                                      k1_val)
+                               then_block
+                               else_block))
+  (if-let false (u64_eq k1 k2))
+  (brif cond then_block else_block))
+
+;; Same optimization but with comparison operands swapped
+(rule (simplify_skeleton (brif (icmp _ (IntCC.Equal)
+                                      k1_val @ (iconst_u _ k1)
+                                      (select ty cond k1_val k2_val @ (iconst_u _ k2)))
+                               then_block
+                               else_block))
+  (if-let false (u64_eq k1 k2))
+  (brif cond then_block else_block))

@@ -570,7 +570,13 @@ where
         //
         // Whatever approach we would take, we would invalidate value uses, and
         // would need to track and fix them up.
-        if self.func.dfg.insts[inst].opcode().is_branch() {
+        //
+        // However, we make an exception for `brif` instructions where the
+        // optimization preserves the CFG structure (same target blocks, just
+        // potentially swapped order and different condition). These
+        // optimizations are safe because they don't change domination properties.
+        let opcode = self.func.dfg.insts[inst].opcode();
+        if opcode.is_branch() && opcode != Opcode::Brif {
             return None;
         }
 
@@ -654,8 +660,8 @@ where
             if cfg!(debug_assertions) {
                 let opcode = ctx.func.dfg.insts[inst].opcode();
                 debug_assert!(
-                    !(opcode.is_terminator() || opcode.is_branch()),
-                    "simplifying control-flow instructions and terminators is not yet supported",
+                    !(opcode.is_terminator() || opcode.is_branch()) || opcode == Opcode::Brif,
+                    "simplifying control-flow instructions and terminators (except brif) is not yet supported",
                 );
 
                 let old_vals = ctx.func.dfg.inst_results(inst);
@@ -964,7 +970,13 @@ impl<'a> EgraphPass<'a> {
 
         // Replace the old instruction with the new one.
         cursor.replace_inst(new_inst);
-        debug_assert!(!cursor.func.dfg.insts[new_inst].opcode().is_terminator());
+        // We allow brif terminators to be replaced with other brif instructions
+        // since this preserves the CFG structure.
+        let opcode = cursor.func.dfg.insts[new_inst].opcode();
+        debug_assert!(
+            !opcode.is_terminator() || opcode == Opcode::Brif,
+            "only brif terminators can be simplified"
+        );
 
         // Redirect the old instruction's result values to our new instruction's
         // result values.
